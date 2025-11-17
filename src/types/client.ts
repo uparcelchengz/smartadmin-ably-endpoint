@@ -14,7 +14,7 @@ export interface ClientData {
 
 export interface StatusUpdate {
   clientId: string;
-  type: 'heartbeat' | 'pong' | 'status' | 'action-result' | 'error';
+  type: 'heartbeat' | 'pong' | 'status' | 'action-result' | 'error' | 'disconnecting';
   data: any;
   timestamp: string;
 }

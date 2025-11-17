@@ -92,7 +92,7 @@ export default function ClientDetailPage() {
               type: 'received',
               command: update.type,
               data: update.data,
-              timestamp: update.timestamp || new Date(msg.timestamp).toISOString()
+              timestamp: update.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
             });
           }
         });
@@ -107,7 +107,7 @@ export default function ClientDetailPage() {
               type: 'sent',
               command: cmd.command,
               data: cmd.payload || {},
-              timestamp: cmd.timestamp || new Date(msg.timestamp).toISOString()
+              timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
             });
           }
         });
@@ -338,7 +338,7 @@ export default function ClientDetailPage() {
     return new Date(timestamp).toLocaleString();
   };
 
-  const formatMemory = (bytes: number) => {
+  const formatMemory = (bytes?: number) => {
     if (!bytes) return 'N/A';
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
@@ -423,7 +423,7 @@ export default function ClientDetailPage() {
                     <span>Memory Usage</span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatMemory(client.memory)}
+                    {formatMemory(client?.memory)}
                   </p>
                 </div>
 
