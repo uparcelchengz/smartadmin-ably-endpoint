@@ -4,6 +4,7 @@ let ablyInstance: Ably.Realtime | null = null;
 
 export function getAblyClient(): Ably.Realtime {
   if (!ablyInstance) {
+    console.log('[Ably Client] 🔌 Initializing new Ably client...');
     ablyInstance = new Ably.Realtime({
       key: "j5t3sA.v_O0XA:TwoToQ-v5IqoqZYEHVGGiIxbU1O0WLztVSX7CFulXVU",
       clientId: "smartadmin-dashboard",
@@ -13,8 +14,12 @@ export function getAblyClient(): Ably.Realtime {
       }
     });
 
+    console.log('[Ably Client] 🔧 Setting up auto-logging...');
     // Auto-log all messages to PostgreSQL for long-term storage
     setupAutoLogging();
+    console.log('[Ably Client] ✅ Ably client initialized successfully');
+  } else {
+    console.log('[Ably Client] ♻️ Reusing existing Ably client instance');
   }
   return ablyInstance;
 }
@@ -23,15 +28,28 @@ export function getAblyClient(): Ably.Realtime {
  * Setup automatic logging of all Ably messages to PostgreSQL
  */
 function setupAutoLogging() {
-  if (!ablyInstance) return;
+  if (!ablyInstance) {
+    console.log('[Auto-Logger] ❌ No Ably instance available for auto-logging');
+    return;
+  }
+
+  console.log('[Auto-Logger] 🚀 Setting up auto-logging for Ably channels...');
 
   // Log status updates (messages FROM clients)
   const statusChannel = ablyInstance.channels.get('smartadmin-status');
-  statusChannel.subscribe('*', (message) => logMessageToPostgreSQL(message, 'smartadmin-status'));
+  statusChannel.subscribe('*', (message) => {
+    console.log('[Auto-Logger] 📩 Status message received:', message.data?.type, 'from', message.data?.clientId);
+    logMessageToPostgreSQL(message, 'smartadmin-status');
+  });
 
   // Log control commands (messages TO clients) - use wildcard subscription
   const broadcastChannel = ablyInstance.channels.get('smartadmin-control-broadcast');
-  broadcastChannel.subscribe('*', (message) => logMessageToPostgreSQL(message, 'smartadmin-control-broadcast'));
+  broadcastChannel.subscribe('*', (message) => {
+    console.log('[Auto-Logger] 📤 Control message received:', message.data?.command);
+    logMessageToPostgreSQL(message, 'smartadmin-control-broadcast');
+  });
+
+  console.log('[Auto-Logger] ✅ Auto-logging setup complete');
 }
 
 /**
@@ -39,6 +57,13 @@ function setupAutoLogging() {
  */
 async function logMessageToPostgreSQL(message: Ably.Message, channelName: string) {
   try {
+    console.log('[Auto-Logger] 🔄 Processing message for logging:', {
+      messageId: message.id,
+      channelName,
+      messageType: message.data?.type || message.data?.command,
+      timestamp: message.timestamp
+    });
+
     // Use the provided channel name
     const isStatusMessage = channelName.includes('status');
     const messageData = message.data;
@@ -58,7 +83,7 @@ async function logMessageToPostgreSQL(message: Ably.Message, channelName: string
       
       // Special handling for message-log type
       if (command === 'message-log') {
-        console.log('[Auto-Logger] Processing message-log from client:', clientId);
+        console.log('[Auto-Logger] 📝 Processing message-log from client:', clientId);
         payload = {
           ...messageData.data,
           originalMessage: messageData.data.message,
@@ -73,25 +98,40 @@ async function logMessageToPostgreSQL(message: Ably.Message, channelName: string
       payload = messageData.payload || {};
     }
 
-    await fetch('/api/logs/message', {
+    const logData = {
+      messageId: message.id || `auto-${Date.now()}`,
+      clientId,
+      type,
+      channel: channelName,
+      command,
+      payload,
+      timestamp: new Date(message.timestamp || Date.now())
+    };
+
+    console.log('[Auto-Logger] 🌐 Sending to API:', logData);
+
+    const response = await fetch('/api/logs/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messageId: message.id || `auto-${Date.now()}`,
-        clientId,
-        type,
-        channel: channelName,
-        command,
-        payload,
-        timestamp: new Date(message.timestamp || Date.now())
-      })
+      body: JSON.stringify(logData)
     });
+
+    if (!response.ok) {
+      throw new Error(`API responded with ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('[Auto-Logger] ✅ Successfully logged to PostgreSQL:', result);
     
     if (command === 'message-log') {
-      console.log('[Auto-Logger] ✓ Message-log from client stored to PostgreSQL');
+      console.log('[Auto-Logger] ✅ Message-log from client stored to PostgreSQL');
     }
   } catch (error) {
-    console.error('[Auto-Logger] Failed to log message to PostgreSQL:', error);
+    console.error('[Auto-Logger] ❌ Failed to log message to PostgreSQL:', error);
+    console.error('[Auto-Logger] Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
   }
 }
 

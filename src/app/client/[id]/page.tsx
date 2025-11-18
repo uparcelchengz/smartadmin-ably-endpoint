@@ -650,24 +650,37 @@ export default function ClientDetailPage() {
                               <div className="font-medium text-blue-700 dark:text-blue-400">
                                 📄 {msg.data.message}
                               </div>
-                              {Object.keys(msg.data).length > 3 && ( // Show additional data if available
-                                <details className="text-xs">
-                                  <summary className="cursor-pointer text-gray-600 dark:text-gray-400">
-                                    Additional Data
-                                  </summary>
-                                  <pre className="mt-2 whitespace-pre-wrap break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
-                                    {JSON.stringify(
-                                      Object.fromEntries(
-                                        Object.entries(msg.data).filter(([key]) => 
-                                          !['message', 'clientId', 'clientIP', 'clientTimezone'].includes(key)
-                                        )
-                                      ), 
-                                      null, 
-                                      2
-                                    )}
-                                  </pre>
-                                </details>
+                              
+                              {/* Show client info if available */}
+                              {(msg.data.clientIP || msg.data.clientTimezone) && (
+                                <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                                  {msg.data.clientIP && (
+                                    <div>🌐 IP: {msg.data.clientIP}</div>
+                                  )}
+                                  {msg.data.clientTimezone && (
+                                    <div>🕐 Timezone: {msg.data.clientTimezone}</div>
+                                  )}
+                                </div>
                               )}
+                              
+                              {/* Show any additional data beyond the core message-log fields */}
+                              {(() => {
+                                const additionalFields = Object.fromEntries(
+                                  Object.entries(msg.data).filter(([key]) => 
+                                    !['message', 'clientId', 'clientIP', 'clientTimezone'].includes(key)
+                                  )
+                                );
+                                return Object.keys(additionalFields).length > 0 ? (
+                                  <details className="text-xs">
+                                    <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                                      📋 Additional Data ({Object.keys(additionalFields).length} fields)
+                                    </summary>
+                                    <pre className="mt-2 whitespace-pre-wrap break-all bg-gray-100 dark:bg-gray-700 p-2 rounded text-xs">
+                                      {JSON.stringify(additionalFields, null, 2)}
+                                    </pre>
+                                  </details>
+                                ) : null;
+                              })()}
                             </div>
                           ) : (
                             // Standard JSON display for other message types
