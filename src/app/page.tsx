@@ -5,6 +5,7 @@ import { getAblyClient } from "@/lib/ably-client";
 import { ClientData, StatusUpdate } from "@/types/client";
 import { ClientCard } from "@/components/client-card";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ChannelStatus } from "@/components/channel-status";
 import { Activity } from "lucide-react";
 import * as Ably from 'ably';
 
@@ -268,6 +269,9 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Channel Status Component */}
+        <ChannelStatus />
 
         {clientsArray.length === 0 ? (
           <div className="text-center py-16">

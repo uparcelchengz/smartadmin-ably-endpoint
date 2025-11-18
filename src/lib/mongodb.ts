@@ -44,4 +44,10 @@ async function connectDB() {
   return cached.conn;
 }
 
+// Export function to get database instance
+export async function connectToDatabase() {
+  await connectDB();
+  return mongoose.connection.db;
+}
+
 export default connectDB;

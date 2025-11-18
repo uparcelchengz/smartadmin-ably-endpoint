@@ -66,27 +66,32 @@ export default function ClientDetailPage() {
       }
     });
 
-    // Load message history from Ably channel history instead of MongoDB
+    // Enhanced message loading with Ably history + MongoDB fallback
     const loadMessageHistory = async () => {
       setIsLoadingHistory(true);
-      console.log('[Client Detail] Loading message history from Ably for:', clientId);
+      console.log('[Client Detail] Loading enhanced message history for:', clientId);
       
       try {
-        // Get status channel history (messages FROM client)
+        const allMessages: MessageLog[] = [];
+        
+        // 1. First, get recent messages from Ably (fast, up to 72 hours)
+        console.log('[Client Detail] Loading from Ably channel history...');
+        
         const statusChannel = ably.channels.get("smartadmin-status");
-        const statusHistory = await statusChannel.history({ limit: 100 });
-        
-        // Get control channel history (messages TO client)
         const controlChannel = ably.channels.get(`smartadmin-control-${clientId}`);
-        const controlHistory = await controlChannel.history({ limit: 100 });
+        const broadcastChannel = ably.channels.get("smartadmin-control-broadcast");
         
-        const historicalMessages: MessageLog[] = [];
+        const [statusHistory, controlHistory, broadcastHistory] = await Promise.all([
+          statusChannel.history({ limit: 100 }),
+          controlChannel.history({ limit: 50 }),
+          broadcastChannel.history({ limit: 50 })
+        ]);
         
         // Process status updates (received from client)
         statusHistory.items.forEach((msg: Ably.Message) => {
           const update = msg.data;
           if (update.clientId === clientId) {
-            historicalMessages.push({
+            allMessages.push({
               id: msg.id || `status-${msg.timestamp}`,
               clientId: update.clientId,
               type: 'received',
@@ -97,11 +102,11 @@ export default function ClientDetailPage() {
           }
         });
         
-        // Process control commands (sent to client)
+        // Process control commands (sent to specific client)
         controlHistory.items.forEach((msg: Ably.Message) => {
           const cmd = msg.data;
           if (cmd.targetClientId === clientId) {
-            historicalMessages.push({
+            allMessages.push({
               id: msg.id || `cmd-${msg.timestamp}`,
               clientId,
               type: 'sent',
@@ -112,15 +117,86 @@ export default function ClientDetailPage() {
           }
         });
         
-        // Sort by timestamp (oldest first)
-        historicalMessages.sort((a, b) => 
+        // Process broadcast commands (sent to all clients)
+        broadcastHistory.items.forEach((msg: Ably.Message) => {
+          const cmd = msg.data;
+          // Include broadcast messages that don't have a specific target or target this client
+          if (!cmd.targetClientId || cmd.targetClientId === clientId) {
+            allMessages.push({
+              id: msg.id || `broadcast-${msg.timestamp}`,
+              clientId,
+              type: 'sent',
+              command: cmd.command,
+              data: cmd.payload || {},
+              timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+            });
+          }
+        });
+        
+        console.log(`[Client Detail] ✓ Loaded ${allMessages.length} messages from Ably`);
+        
+        // 2. Get older messages from MongoDB if Ably history is limited
+        const ablyOldestTimestamp = allMessages.length > 0 
+          ? Math.min(...allMessages.map(m => new Date(m.timestamp).getTime()))
+          : Date.now();
+        
+        console.log('[Client Detail] Loading older messages from MongoDB...');
+        const mongoResponse = await fetch(
+          `/api/logs/message?clientId=${clientId}&endDate=${new Date(ablyOldestTimestamp).toISOString()}&limit=100`
+        );
+        
+        if (mongoResponse.ok) {
+          const mongoData = await mongoResponse.json();
+          if (mongoData.success && mongoData.data.length > 0) {
+            mongoData.data.forEach((msg: { _id?: string; messageId?: string; clientId: string; type: string; command: string; payload: Record<string, unknown>; timestamp: string }) => {
+              allMessages.push({
+                id: msg._id || msg.messageId || `mongo-${Date.now()}`,
+                clientId: msg.clientId,
+                type: msg.type as 'sent' | 'received',
+                command: msg.command,
+                data: msg.payload,
+                timestamp: new Date(msg.timestamp).toISOString()
+              });
+            });
+            console.log(`[Client Detail] ✓ Added ${mongoData.data.length} older messages from MongoDB`);
+          }
+        }
+        
+        // 3. Sort all messages by timestamp and remove duplicates
+        const uniqueMessages = allMessages.filter((msg, index, self) => 
+          index === self.findIndex(m => m.id === msg.id)
+        ).sort((a, b) => 
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
         
-        setMessages(historicalMessages);
-        console.log(`[Client Detail] ✓ Loaded ${historicalMessages.length} messages from Ably`);
+        setMessages(uniqueMessages);
+        console.log(`[Client Detail] ✓ Total loaded: ${uniqueMessages.length} messages (Ably + MongoDB)`);
+        
       } catch (err) {
-        console.error("[Client Detail] ✗ Error loading message history from Ably:", err);
+        console.error("[Client Detail] ✗ Error loading message history:", err);
+        
+        // Fallback to MongoDB only
+        try {
+          console.log('[Client Detail] Falling back to MongoDB only...');
+          const mongoResponse = await fetch(`/api/logs/message?clientId=${clientId}&limit=200`);
+          const mongoData = await mongoResponse.json();
+          
+          if (mongoData.success) {
+            const mongoMessages = mongoData.data.map((msg: { _id?: string; messageId?: string; clientId: string; type: string; command: string; payload: Record<string, unknown>; timestamp: string }) => ({
+              id: msg._id || msg.messageId || `fallback-${Date.now()}`,
+              clientId: msg.clientId,
+              type: msg.type as 'sent' | 'received',
+              command: msg.command,
+              data: msg.payload,
+              timestamp: new Date(msg.timestamp).toISOString()
+            }));
+            
+            setMessages(mongoMessages);
+            console.log(`[Client Detail] ✓ Fallback loaded ${mongoMessages.length} messages from MongoDB`);
+          }
+        } catch (fallbackErr) {
+          console.error("[Client Detail] ✗ Fallback also failed:", fallbackErr);
+        }
       } finally {
         setIsLoadingHistory(false);
       }
@@ -219,7 +295,7 @@ export default function ClientDetailPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendCommand = async (command: string, payload?: any) => {
+  const sendCommand = async (command: string, payload?: Record<string, unknown>) => {
     setIsLoading(true);
     const ably = getAblyClient();
     const controlChannel = ably.channels.get(`smartadmin-control-${clientId}`);
@@ -328,7 +404,7 @@ export default function ClientDetailPage() {
       const parsed = JSON.parse(customCommand);
       await sendCommand(parsed.command, parsed.payload);
       setCustomCommand("");
-    } catch (error) {
+    } catch {
       await sendCommand(customCommand, {});
       setCustomCommand("");
     }
