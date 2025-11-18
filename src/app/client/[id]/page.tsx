@@ -217,14 +217,35 @@ export default function ClientDetailPage() {
           status: 'online'
         } : null);
 
-        const newMessage = {
-          id: message.id || Date.now().toString(),
-          clientId: update.clientId,
-          type: 'received' as const,
-          command: update.type,
-          data: update.data,
-          timestamp: update.timestamp
-        };
+        // Create message log entry for different types
+        let newMessage;
+        
+        if (update.type === 'message-log') {
+          // Special handling for message-log type
+          newMessage = {
+            id: message.id || `msg-log-${Date.now()}`,
+            clientId: update.clientId,
+            type: 'received' as const,
+            command: 'message-log',
+            data: {
+              message: update.data.message,
+              clientIP: update.data.clientIP,
+              clientTimezone: update.data.clientTimezone,
+              ...update.data
+            },
+            timestamp: update.timestamp
+          };
+        } else {
+          // Standard handling for other status update types
+          newMessage = {
+            id: message.id || Date.now().toString(),
+            clientId: update.clientId,
+            type: 'received' as const,
+            command: update.type,
+            data: update.data,
+            timestamp: update.timestamp
+          };
+        }
 
         setMessages(prev => {
           const isDuplicate = prev.some(msg => msg.id === message.id);
@@ -610,14 +631,50 @@ export default function ClientDetailPage() {
                           <Badge variant={msg.type === 'sent' ? 'default' : 'outline'} className="text-xs">
                             {msg.type === 'sent' ? 'Sent' : 'Received'}
                           </Badge>
-                          <Badge variant="outline" className="text-xs">
+                          <Badge 
+                            variant={msg.command === 'message-log' ? 'secondary' : 'outline'} 
+                            className="text-xs"
+                          >
                             {msg.command}
                           </Badge>
+                          {msg.command === 'message-log' && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/20">
+                              🗄️ Client Log
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-sm">
-                          <pre className="text-xs whitespace-pre-wrap break-all">
-                            {JSON.stringify(msg.data, null, 2)}
-                          </pre>
+                          {msg.command === 'message-log' && typeof msg.data.message === 'string' ? (
+                            // Special display for message-log entries
+                            <div className="space-y-2">
+                              <div className="font-medium text-blue-700 dark:text-blue-400">
+                                📄 {msg.data.message}
+                              </div>
+                              {Object.keys(msg.data).length > 3 && ( // Show additional data if available
+                                <details className="text-xs">
+                                  <summary className="cursor-pointer text-gray-600 dark:text-gray-400">
+                                    Additional Data
+                                  </summary>
+                                  <pre className="mt-2 whitespace-pre-wrap break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">
+                                    {JSON.stringify(
+                                      Object.fromEntries(
+                                        Object.entries(msg.data).filter(([key]) => 
+                                          !['message', 'clientId', 'clientIP', 'clientTimezone'].includes(key)
+                                        )
+                                      ), 
+                                      null, 
+                                      2
+                                    )}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
+                          ) : (
+                            // Standard JSON display for other message types
+                            <pre className="text-xs whitespace-pre-wrap break-all">
+                              {JSON.stringify(msg.data, null, 2)}
+                            </pre>
+                          )}
                           <p className="text-xs opacity-70 mt-1">
                             {formatTimestamp(msg.timestamp)}
                           </p>

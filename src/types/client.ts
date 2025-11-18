@@ -14,14 +14,14 @@ export interface ClientData {
 
 export interface StatusUpdate {
   clientId: string;
-  type: 'heartbeat' | 'pong' | 'status' | 'action-result' | 'error' | 'disconnecting';
-  data: any;
+  type: 'heartbeat' | 'pong' | 'status' | 'action-result' | 'error' | 'disconnecting' | 'message-log'; // Added 'message-log'
+  data: Record<string, unknown> | MessageLogData;
   timestamp: string;
 }
 
 export interface CommandPayload {
   command: 'ping' | 'get-status' | 'execute-action' | 'restart' | 'shutdown';
-  payload?: any;
+  payload?: Record<string, unknown> | string | number | boolean | null;
   targetClientId?: string;
 }
 
@@ -30,6 +30,15 @@ export interface MessageLog {
   clientId: string;
   type: 'sent' | 'received';
   command?: string;
-  data: any;
+  data: Record<string, unknown> | MessageLogData;
   timestamp: string;
+}
+
+// New interface for message log data structure
+export interface MessageLogData {
+  clientId: string;
+  clientIP: string;
+  clientTimezone: string;
+  message: string;
+  [key: string]: unknown; // For additional data
 }

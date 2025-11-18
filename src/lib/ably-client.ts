@@ -13,31 +13,31 @@ export function getAblyClient(): Ably.Realtime {
       }
     });
 
-    // Auto-log all messages to MongoDB for long-term storage
+    // Auto-log all messages to PostgreSQL for long-term storage
     setupAutoLogging();
   }
   return ablyInstance;
 }
 
 /**
- * Setup automatic logging of all Ably messages to MongoDB
+ * Setup automatic logging of all Ably messages to PostgreSQL
  */
 function setupAutoLogging() {
   if (!ablyInstance) return;
 
   // Log status updates (messages FROM clients)
   const statusChannel = ablyInstance.channels.get('smartadmin-status');
-  statusChannel.subscribe('*', (message) => logMessageToMongoDB(message, 'smartadmin-status'));
+  statusChannel.subscribe('*', (message) => logMessageToPostgreSQL(message, 'smartadmin-status'));
 
   // Log control commands (messages TO clients) - use wildcard subscription
   const broadcastChannel = ablyInstance.channels.get('smartadmin-control-broadcast');
-  broadcastChannel.subscribe('*', (message) => logMessageToMongoDB(message, 'smartadmin-control-broadcast'));
+  broadcastChannel.subscribe('*', (message) => logMessageToPostgreSQL(message, 'smartadmin-control-broadcast'));
 }
 
 /**
- * Automatically log Ably messages to MongoDB for long-term persistence
+ * Automatically log Ably messages to PostgreSQL for long-term persistence
  */
-async function logMessageToMongoDB(message: Ably.Message, channelName: string) {
+async function logMessageToPostgreSQL(message: Ably.Message, channelName: string) {
   try {
     // Use the provided channel name
     const isStatusMessage = channelName.includes('status');
@@ -53,8 +53,18 @@ async function logMessageToMongoDB(message: Ably.Message, channelName: string) {
       // Status update (received from client)
       clientId = messageData.clientId;
       type = 'received';
-      command = messageData.type;
+      command = messageData.type; // This could be 'message-log', 'heartbeat', etc.
       payload = messageData.data;
+      
+      // Special handling for message-log type
+      if (command === 'message-log') {
+        console.log('[Auto-Logger] Processing message-log from client:', clientId);
+        payload = {
+          ...messageData.data,
+          originalMessage: messageData.data.message,
+          loggedAt: new Date().toISOString()
+        };
+      }
     } else {
       // Control command (sent to client)
       clientId = messageData.targetClientId || 'broadcast';
@@ -76,8 +86,12 @@ async function logMessageToMongoDB(message: Ably.Message, channelName: string) {
         timestamp: new Date(message.timestamp || Date.now())
       })
     });
+    
+    if (command === 'message-log') {
+      console.log('[Auto-Logger] ✓ Message-log from client stored to PostgreSQL');
+    }
   } catch (error) {
-    console.error('[Auto-Logger] Failed to log message to MongoDB:', error);
+    console.error('[Auto-Logger] Failed to log message to PostgreSQL:', error);
   }
 }
 

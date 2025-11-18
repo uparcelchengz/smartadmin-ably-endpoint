@@ -18,7 +18,7 @@ import {
 import { useRouter } from "next/navigation";
 
 interface Ban {
-  _id: string;
+  id: string; // Changed from _id to id for PostgreSQL
   type: 'ip' | 'email';
   value: string;
   reason?: string;
@@ -54,8 +54,17 @@ export default function BansPage() {
       const data = await response.json();
       
       if (data.success) {
-        setBans(data.data);
-        console.log('[Bans] Loaded', data.count, 'bans');
+        // Map PostgreSQL fields to frontend interface
+        const mappedBans = data.data.map((ban: any) => ({
+          id: ban.id.toString(), // Convert to string for consistency
+          type: ban.type,
+          value: ban.value,
+          reason: ban.reason,
+          createdAt: ban.createdAt,
+          updatedAt: ban.updatedAt
+        }));
+        setBans(mappedBans);
+        console.log('[Bans] Loaded', mappedBans.length, 'bans');
       } else {
         console.error('[Bans] Failed to load:', data.error);
       }
@@ -104,7 +113,7 @@ export default function BansPage() {
       const response = await fetch('/api/bans', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, reason })
+        body: JSON.stringify({ id: parseInt(id), reason }) // Convert to number for PostgreSQL
       });
       
       const data = await response.json();
@@ -146,7 +155,7 @@ export default function BansPage() {
   };
 
   const startEdit = (ban: Ban) => {
-    setEditingId(ban._id);
+    setEditingId(ban.id); // Changed from ban._id to ban.id
     setEditReason(ban.reason || '');
   };
 
@@ -263,7 +272,7 @@ export default function BansPage() {
               <div className="space-y-3">
                 {bans.map((ban) => (
                   <div
-                    key={ban._id}
+                    key={ban.id} // Changed from ban._id to ban.id
                     className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                   >
                     <div className="flex items-start justify-between">
@@ -277,7 +286,7 @@ export default function BansPage() {
                           </span>
                         </div>
                         
-                        {editingId === ban._id ? (
+                        {editingId === ban.id ? ( // Changed from ban._id to ban.id
                           <div className="flex items-center gap-2 mt-2">
                             <Input
                               placeholder="Reason"
@@ -287,7 +296,7 @@ export default function BansPage() {
                             />
                             <Button
                               size="sm"
-                              onClick={() => updateBan(ban._id, editReason)}
+                              onClick={() => updateBan(ban.id, editReason)} // Changed from ban._id to ban.id
                             >
                               <Save className="h-4 w-4" />
                             </Button>
@@ -313,7 +322,7 @@ export default function BansPage() {
                         )}
                       </div>
                       
-                      {editingId !== ban._id && (
+                      {editingId !== ban.id && ( // Changed from ban._id to ban.id
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
@@ -325,7 +334,7 @@ export default function BansPage() {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => deleteBan(ban._id)}
+                            onClick={() => deleteBan(ban.id)} // Changed from ban._id to ban.id
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

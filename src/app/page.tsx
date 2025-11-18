@@ -114,15 +114,45 @@ export default function Home() {
           if (update.type === 'heartbeat') {
             newClients.set(update.clientId, {
               ...client,
-              uptime: update.data.uptime,
-              memory: update.data.memory,
+              uptime: typeof update.data.uptime === 'number' ? update.data.uptime : client.uptime,
+              memory: typeof update.data.memory === 'number' ? update.data.memory : client.memory,
               lastSeen: update.timestamp,
-              status: 'online'
+              status: 'online' as const
             });
           } else if (update.type === 'status') {
             newClients.set(update.clientId, {
               ...client,
               ...update.data,
+              lastSeen: update.timestamp,
+              status: 'online'
+            });
+          } else if (update.type === 'message-log') {
+            // Handle message log updates
+            console.log('[Dashboard] Message log received from client:', update.clientId, update.data.message);
+            // Auto-log the message-log to PostgreSQL for persistence
+            fetch('/api/logs/message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messageId: `client-log-${Date.now()}`,
+                clientId: update.clientId,
+                type: 'received',
+                channel: 'smartadmin-status',
+                command: 'message-log',
+                payload: update.data,
+                timestamp: new Date(update.timestamp)
+              })
+            }).then(res => res.json()).then(data => {
+              if (data.success) {
+                console.log('[Dashboard] ✓ Message log stored to PostgreSQL');
+              }
+            }).catch(err => {
+              console.error('[Dashboard] ✗ Failed to store message log:', err);
+            });
+            
+            // Update client status to show last activity
+            newClients.set(update.clientId, {
+              ...client,
               lastSeen: update.timestamp,
               status: 'online'
             });
