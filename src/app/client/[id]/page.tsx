@@ -12,15 +12,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { 
   ArrowLeft, 
   Activity, 
-  Zap, 
-  RotateCw, 
-  Power, 
   Send,
   MapPin,
   Monitor,
   Clock,
-  MemoryStick,
-  Shield
+  MemoryStick
 } from "lucide-react";
 import * as Ably from 'ably';
 
@@ -36,27 +32,124 @@ export default function ClientDetailPage() {
   const [isBanning, setIsBanning] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  
+  // Notification modal states
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationForm, setNotificationForm] = useState({
+    title: '',
+    body: '',
+    iconAnimation: 'null' as 'rotate' | 'flip' | 'null',
+    sound: true,
+    notificationType: 'small' as 'small' | 'large' | 'image',
+    imageUrl: '',
+    timeout: 5000
+  });
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
     const ably = getAblyClient();
     
-    // Subscribe to presence channel
+    // Set a timeout for overall loading
+    const loadingTimeout = setTimeout(() => {
+      if (isLoadingHistory) {
+        console.warn('[Client Detail] Loading timeout - setting offline status');
+        setIsLoadingHistory(false);
+        setClient(prev => prev ? { ...prev, status: 'offline' } : {
+          clientId,
+          clientIP: 'unknown',
+          clientTimezone: 'unknown',
+          hostname: 'unknown',
+          platform: 'unknown', 
+          appVersion: 'unknown',
+          startTime: 'unknown',
+          status: 'offline',
+          lastSeen: new Date().toISOString()
+        });
+      }
+    }, 10000); // 10 second timeout
+
+    // Subscribe to presence channel with timeout
     const presenceChannel = ably.channels.get("smartadmin-presence");
     
-    presenceChannel.presence.get().then((members) => {
-      const member = members?.find(m => m.clientId === clientId);
+    // Use Promise.race to add timeout to presence.get()
+    Promise.race([
+      presenceChannel.presence.get() as Promise<Ably.PresenceMessage[]>,
+      new Promise<Ably.PresenceMessage[]>((_, reject) => 
+        setTimeout(() => reject(new Error('Presence timeout')), 5000)
+      )
+    ]).then((members: Ably.PresenceMessage[]) => {
+      const member = members?.find((m: Ably.PresenceMessage) => m.clientId === clientId);
       if (member) {
         setClient({
           ...member.data,
           status: 'online',
           lastSeen: new Date().toISOString()
         });
+        console.log('[Client Detail] ✓ Client found in presence:', clientId);
+      } else {
+        console.log('[Client Detail] Client not found in presence - checking for offline data');
+        // Client not in presence, try to load from recent logs
+        loadOfflineClientData();
       }
     }).catch((err) => {
-      console.error("Error getting presence:", err);
+      console.warn("[Client Detail] Error getting presence (client might be offline):", err.message);
+      // Try to load offline data
+      loadOfflineClientData();
     });
+
+    // Function to load client data from logs when offline
+    const loadOfflineClientData = async () => {
+      try {
+        const response = await fetch(`/api/logs/message?clientId=${encodeURIComponent(clientId)}&limit=1`);
+        const data = await response.json();
+        
+        if (data.success && data.data.length > 0) {
+          const lastLog = data.data[0];
+          setClient({
+            clientId,
+            clientIP: lastLog.payload?.clientIP || 'unknown',
+            clientTimezone: lastLog.payload?.clientTimezone || 'unknown', 
+            hostname: lastLog.payload?.hostname || 'unknown',
+            platform: lastLog.payload?.platform || 'unknown',
+            appVersion: lastLog.payload?.appVersion || 'unknown',
+            startTime: lastLog.payload?.startTime || 'unknown',
+            status: 'offline',
+            lastSeen: lastLog.timestamp
+          });
+          console.log('[Client Detail] ✓ Loaded offline client data from logs');
+        } else {
+          // No data found, create minimal client object
+          setClient({
+            clientId,
+            clientIP: 'unknown',
+            clientTimezone: 'unknown',
+            hostname: 'unknown', 
+            platform: 'unknown',
+            appVersion: 'unknown',
+            startTime: 'unknown',
+            status: 'offline',
+            lastSeen: 'Never'
+          });
+          console.log('[Client Detail] No client data found - created minimal client object');
+        }
+      } catch (error) {
+        console.error('[Client Detail] Error loading offline client data:', error);
+        // Fallback to minimal client object
+        setClient({
+          clientId,
+          clientIP: 'unknown',
+          clientTimezone: 'unknown', 
+          hostname: 'unknown',
+          platform: 'unknown',
+          appVersion: 'unknown',
+          startTime: 'unknown',
+          status: 'offline',
+          lastSeen: 'Unknown'
+        });
+      }
+    };
 
     // Subscribe to presence leave events - redirect when client disconnects
     presenceChannel.presence.subscribe("leave", (member) => {
@@ -66,7 +159,7 @@ export default function ClientDetailPage() {
       }
     });
 
-    // Enhanced message loading with Ably history + MongoDB fallback
+    // Enhanced message loading with Ably history + PostgreSQL fallback
     const loadMessageHistory = async () => {
       setIsLoadingHistory(true);
       console.log('[Client Detail] Loading enhanced message history for:', clientId);
@@ -74,66 +167,113 @@ export default function ClientDetailPage() {
       try {
         const allMessages: MessageLog[] = [];
         
-        // 1. First, get recent messages from Ably (fast, up to 72 hours)
+        // 1. First, get recent messages from Ably (fast, up to 72 hours) with timeout
         console.log('[Client Detail] Loading from Ably channel history...');
         
         const statusChannel = ably.channels.get("smartadmin-status");
         const controlChannel = ably.channels.get(`smartadmin-control-${clientId}`);
         const broadcastChannel = ably.channels.get("smartadmin-control-broadcast");
         
-        const [statusHistory, controlHistory, broadcastHistory] = await Promise.all([
-          statusChannel.history({ limit: 100 }),
-          controlChannel.history({ limit: 50 }),
-          broadcastChannel.history({ limit: 50 })
-        ]);
-        
-        // Process status updates (received from client)
-        statusHistory.items.forEach((msg: Ably.Message) => {
-          const update = msg.data;
-          if (update.clientId === clientId) {
-            allMessages.push({
-              id: msg.id || `status-${msg.timestamp}`,
-              clientId: update.clientId,
-              type: 'received',
-              command: update.type,
-              data: update.data,
-              timestamp: update.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
-            });
-          }
-        });
-        
-        // Process control commands (sent to specific client)
-        controlHistory.items.forEach((msg: Ably.Message) => {
-          const cmd = msg.data;
-          if (cmd.targetClientId === clientId) {
-            allMessages.push({
-              id: msg.id || `cmd-${msg.timestamp}`,
-              clientId,
-              type: 'sent',
-              command: cmd.command,
-              data: cmd.payload || {},
-              timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
-            });
-          }
-        });
-        
-        // Process broadcast commands (sent to all clients)
-        broadcastHistory.items.forEach((msg: Ably.Message) => {
-          const cmd = msg.data;
-          // Include broadcast messages that don't have a specific target or target this client
-          if (!cmd.targetClientId || cmd.targetClientId === clientId) {
-            allMessages.push({
-              id: msg.id || `broadcast-${msg.timestamp}`,
-              clientId,
-              type: 'sent',
-              command: cmd.command,
-              data: cmd.payload || {},
-              timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
-            });
-          }
-        });
-        
-        console.log(`[Client Detail] ✓ Loaded ${allMessages.length} messages from Ably`);
+        try {
+          // Add timeout to Ably history calls
+          const historyPromises = [
+            Promise.race([
+              statusChannel.history({ limit: 100 }) as Promise<Ably.PaginatedResult<Ably.Message>>,
+              new Promise<Ably.PaginatedResult<Ably.Message>>((_, reject) => setTimeout(() => reject(new Error('Ably timeout')), 5000))
+            ]),
+            Promise.race([
+              controlChannel.history({ limit: 50 }) as Promise<Ably.PaginatedResult<Ably.Message>>,
+              new Promise<Ably.PaginatedResult<Ably.Message>>((_, reject) => setTimeout(() => reject(new Error('Ably timeout')), 5000))
+            ]),
+            Promise.race([
+              broadcastChannel.history({ limit: 50 }) as Promise<Ably.PaginatedResult<Ably.Message>>,
+              new Promise<Ably.PaginatedResult<Ably.Message>>((_, reject) => setTimeout(() => reject(new Error('Ably timeout')), 5000))
+            ])
+          ];
+          
+          const [statusHistory, controlHistory, broadcastHistory] = await Promise.all(historyPromises);
+          
+          // Process status updates (received from client)
+          statusHistory.items.forEach((msg: Ably.Message) => {
+            const update = msg.data;
+            if (update.clientId === clientId) {
+              allMessages.push({
+                id: msg.id || `status-${msg.timestamp}`,
+                clientId: update.clientId,
+                type: 'received',
+                command: update.type,
+                data: update.data,
+                timestamp: update.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+              });
+            }
+          });
+          
+          // Process control commands (sent to specific client)
+          controlHistory.items.forEach((msg: Ably.Message) => {
+            const cmd = msg.data;
+            if (cmd.targetClientId === clientId) {
+              allMessages.push({
+                id: msg.id || `cmd-${msg.timestamp}`,
+                clientId,
+                type: 'sent',
+                command: cmd.command,
+                data: cmd.payload || {},
+                timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+              });
+            }
+          });
+          
+          // Process broadcast commands (sent to all clients)
+          broadcastHistory.items.forEach((msg: Ably.Message) => {
+            const cmd = msg.data;
+            if (!cmd.targetClientId) { // Only broadcast messages
+              allMessages.push({
+                id: msg.id || `broadcast-${msg.timestamp}`,
+                clientId,
+                type: 'sent',
+                command: cmd.command,
+                data: cmd.payload || {},
+                timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+              });
+            }
+          });
+          
+          // Process control commands (sent to client)
+          controlHistory.items.forEach((msg: Ably.Message) => {
+            const cmd = msg.data;
+            if (cmd.targetClientId === clientId) {
+              allMessages.push({
+                id: msg.id || `cmd-${msg.timestamp}`,
+                clientId,
+                type: 'sent',
+                command: cmd.command,
+                data: cmd.payload || {},
+                timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+              });
+            }
+          });
+          
+          // Process broadcast commands (sent to all clients)
+          broadcastHistory.items.forEach((msg: Ably.Message) => {
+            const cmd = msg.data;
+            // Include broadcast messages that don't have a specific target or target this client
+            if (!cmd.targetClientId || cmd.targetClientId === clientId) {
+              allMessages.push({
+                id: msg.id || `broadcast-${msg.timestamp}`,
+                clientId,
+                type: 'sent',
+                command: cmd.command,
+                data: cmd.payload || {},
+                timestamp: cmd.timestamp || new Date(msg.timestamp ?? Date.now()).toISOString()
+              });
+            }
+          });
+          
+          console.log(`[Client Detail] ✓ Loaded ${allMessages.length} messages from Ably`);
+        } catch (ablyError) {
+          console.warn('[Client Detail] Ably history failed (client might be offline):', ablyError);
+          // Continue to PostgreSQL even if Ably fails
+        }
         
         // 2. Get older messages from MongoDB if Ably history is limited
         const ablyOldestTimestamp = allMessages.length > 0 
@@ -310,6 +450,12 @@ export default function ClientDetailPage() {
       statusChannel.unsubscribe();
       controlChannel.unsubscribe();
     };
+    // Cleanup function
+    return () => {
+      clearTimeout(loadingTimeout);
+      console.log('[Client Detail] Cleanup - cleared timeout and subscriptions');
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, router]);
 
   useEffect(() => {
@@ -431,6 +577,54 @@ export default function ClientDetailPage() {
     }
   };
 
+  const handleSendNotification = async () => {
+    if (!notificationForm.title.trim() || !notificationForm.body.trim()) {
+      alert('Title and body are required');
+      return;
+    }
+
+    const payload = {
+      title: notificationForm.title,
+      body: notificationForm.body,
+      iconAnimation: notificationForm.iconAnimation === 'null' ? null : notificationForm.iconAnimation,
+      sound: notificationForm.sound,
+      notificationType: notificationForm.notificationType,
+      imageUrl: notificationForm.notificationType === 'image' ? notificationForm.imageUrl : undefined,
+      timeout: notificationForm.timeout
+    };
+
+    try {
+      await sendCommand('notification', payload);
+      setShowNotificationModal(false);
+      // Reset form
+      setNotificationForm({
+        title: '',
+        body: '',
+        iconAnimation: 'null',
+        sound: true,
+        notificationType: 'small',
+        imageUrl: '',
+        timeout: 5000
+      });
+      console.log('[Client Detail] ✓ Notification sent successfully');
+    } catch (error) {
+      console.error('[Client Detail] ✗ Error sending notification:', error);
+      alert('Failed to send notification. Please try again.');
+    }
+  };
+
+  const resetNotificationForm = () => {
+    setNotificationForm({
+      title: '',
+      body: '',
+      iconAnimation: 'null',
+      sound: true,
+      notificationType: 'small',
+      imageUrl: '',
+      timeout: 5000
+    });
+  };
+
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString();
   };
@@ -470,10 +664,10 @@ export default function ClientDetailPage() {
           <ThemeToggle />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Client Info */}
           <div className="lg:col-span-1">
-            <Card>
+            <Card className="h-[calc(100vh-12rem)]">
               <CardHeader>
                 <CardTitle>Client Information</CardTitle>
               </CardHeader>
@@ -535,67 +729,10 @@ export default function ClientDetailPage() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Control Panel */}
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle>Control Panel</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => sendCommand('ping')}
-                  disabled={isLoading}
-                >
-                  <Zap className="h-4 w-4 mr-2" />
-                  Ping
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => sendCommand('get-status')}
-                  disabled={isLoading}
-                >
-                  <Activity className="h-4 w-4 mr-2" />
-                  Get Status
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={() => sendCommand('restart')}
-                  disabled={isLoading}
-                >
-                  <RotateCw className="h-4 w-4 mr-2" />
-                  Restart
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="destructive"
-                  onClick={() => sendCommand('shutdown')}
-                  disabled={isLoading}
-                >
-                  <Power className="h-4 w-4 mr-2" />
-                  Shutdown
-                </Button>
-                
-                <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <Button
-                    className="w-full"
-                    variant="destructive"
-                    onClick={handleBanClient}
-                    disabled={isBanning}
-                  >
-                    <Shield className="h-4 w-4 mr-2" />
-                    {isBanning ? 'Banning...' : 'Ban Client IP'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           {/* Message Log */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-1">
             <Card className="h-[calc(100vh-12rem)]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -652,12 +789,12 @@ export default function ClientDetailPage() {
                               </div>
                               
                               {/* Show client info if available */}
-                              {(msg.data.clientIP || msg.data.clientTimezone) && (
+                              {(typeof msg.data.clientIP === 'string' || typeof msg.data.clientTimezone === 'string') && (
                                 <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                                  {msg.data.clientIP && (
+                                  {typeof msg.data.clientIP === 'string' && (
                                     <div>🌐 IP: {msg.data.clientIP}</div>
                                   )}
-                                  {msg.data.clientTimezone && (
+                                  {typeof msg.data.clientTimezone === 'string' && (
                                     <div>🕐 Timezone: {msg.data.clientTimezone}</div>
                                   )}
                                 </div>
@@ -713,11 +850,208 @@ export default function ClientDetailPage() {
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+                
+                {/* Quick Actions */}
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  <Button
+                    onClick={() => setShowNotificationModal(true)}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    🔔 Send Notification
+                  </Button>
+                  <Button
+                    onClick={() => sendCommand('ping')}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    📡 Ping
+                  </Button>
+                  <Button
+                    onClick={() => sendCommand('getstatus')}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    📊 Get Status
+                  </Button>
+                  <Button
+                    onClick={() => sendCommand('restart')}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    🔄 Restart
+                  </Button>
+                  <Button
+                    onClick={() => sendCommand('shutdown')}
+                    disabled={isLoading}
+                    variant="destructive"
+                    className="gap-2"
+                  >
+                    ⚡ Shutdown
+                  </Button>
+                  <Button
+                    onClick={handleBanClient}
+                    disabled={isBanning || !client?.clientIP}
+                    variant="destructive"
+                    className="gap-2"
+                  >
+                    🛡️ {isBanning ? 'Banning...' : 'Ban Client IP'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
+      
+      {/* Notification Modal */}
+      {showNotificationModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Send Notification</h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    setShowNotificationModal(false);
+                    resetNotificationForm();
+                  }}
+                >
+                  ✕
+                </Button>
+              </div>
+              
+              <div className="space-y-4">
+                {/* Title */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title *</label>
+                  <Input
+                    placeholder="Notification title"
+                    value={notificationForm.title}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, title: e.target.value }))}
+                  />
+                </div>
+                
+                {/* Body */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Body *</label>
+                  <textarea
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm"
+                    placeholder="Notification message"
+                    rows={3}
+                    value={notificationForm.body}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, body: e.target.value }))}
+                  />
+                </div>
+                
+                {/* Notification Type */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Notification Type</label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm"
+                    value={notificationForm.notificationType}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, notificationType: e.target.value as 'small' | 'large' | 'image' }))}
+                  >
+                    <option value="small">Small</option>
+                    <option value="large">Large</option>
+                    <option value="image">Image</option>
+                  </select>
+                </div>
+                
+                {/* Image URL (only for image type) */}
+                {notificationForm.notificationType === 'image' && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Image URL</label>
+                    <Input
+                      placeholder="https://example.com/image.jpg"
+                      value={notificationForm.imageUrl}
+                      onChange={(e) => setNotificationForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                    />
+                  </div>
+                )}
+                
+                {/* Icon Animation */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Icon Animation</label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm"
+                    value={notificationForm.iconAnimation}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, iconAnimation: e.target.value as 'rotate' | 'flip' | 'null' }))}
+                  >
+                    <option value="null">None</option>
+                    <option value="rotate">Rotate</option>
+                    <option value="flip">Flip</option>
+                  </select>
+                </div>
+                
+                {/* Timeout */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Auto-close timeout (ms)</label>
+                  <Input
+                    type="number"
+                    min="1000"
+                    max="30000"
+                    step="1000"
+                    value={notificationForm.timeout}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, timeout: parseInt(e.target.value) || 5000 }))}
+                  />
+                </div>
+                
+                {/* Sound */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="sound"
+                    checked={notificationForm.sound}
+                    onChange={(e) => setNotificationForm(prev => ({ ...prev, sound: e.target.checked }))}
+                    className="rounded"
+                  />
+                  <label htmlFor="sound" className="text-sm font-medium">Play sound</label>
+                </div>
+                
+                {/* Preview */}
+                <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                  <h4 className="text-sm font-medium mb-2">Preview:</h4>
+                  <div className="text-xs space-y-1">
+                    <div><strong>Title:</strong> {notificationForm.title || 'No title'}</div>
+                    <div><strong>Body:</strong> {notificationForm.body || 'No body'}</div>
+                    <div><strong>Type:</strong> {notificationForm.notificationType}</div>
+                    <div><strong>Animation:</strong> {notificationForm.iconAnimation === 'null' ? 'None' : notificationForm.iconAnimation}</div>
+                    <div><strong>Sound:</strong> {notificationForm.sound ? 'Yes' : 'No'}</div>
+                    <div><strong>Timeout:</strong> {notificationForm.timeout}ms</div>
+                  </div>
+                </div>
+                
+                {/* Actions */}
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={handleSendNotification}
+                    disabled={!notificationForm.title.trim() || !notificationForm.body.trim() || isLoading}
+                    className="flex-1"
+                  >
+                    🔔 Send Notification
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowNotificationModal(false);
+                      resetNotificationForm();
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

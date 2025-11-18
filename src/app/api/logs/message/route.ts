@@ -52,20 +52,87 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Enhanced DELETE method for log deletion
+export async function DELETE(request: NextRequest) {
+  let client;
+  try {
+    const { searchParams } = new URL(request.url);
+    const deleteAll = searchParams.get('deleteAll') === 'true';
+    
+    client = await connectToDatabase();
+    
+    if (deleteAll) {
+      // Delete all logs
+      console.log('[Message Logger] Deleting ALL message logs');
+      const result = await client.query('DELETE FROM message_logs RETURNING id');
+      const deletedCount = result.rows.length;
+      
+      console.log(`[Message Logger] ✓ Deleted all ${deletedCount} logs`);
+      
+      return NextResponse.json({
+        success: true,
+        message: `Deleted all ${deletedCount} logs`,
+        deletedCount
+      });
+    } else {
+      // Delete specific logs
+      const { logIds } = await request.json();
+      
+      if (!logIds || !Array.isArray(logIds) || logIds.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'No log IDs provided'
+        }, { status: 400 });
+      }
+      
+      console.log(`[Message Logger] Deleting ${logIds.length} specific logs`);
+      
+      // Convert string IDs to integers and create placeholders
+      const numericIds = logIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+      const placeholders = numericIds.map((_, index) => `$${index + 1}`).join(', ');
+      
+      const deleteQuery = `DELETE FROM message_logs WHERE id IN (${placeholders}) RETURNING id`;
+      const result = await client.query(deleteQuery, numericIds);
+      const deletedCount = result.rows.length;
+      
+      console.log(`[Message Logger] ✓ Deleted ${deletedCount} specific logs`);
+      
+      return NextResponse.json({
+        success: true,
+        message: `Deleted ${deletedCount} logs`,
+        deletedCount
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[Message Logger] Delete Error:', errorMessage);
+    return NextResponse.json({
+      success: false,
+      error: errorMessage
+    }, { status: 500 });
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
   let client;
   try {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get('clientId');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 1000); // Cap at 1000
+    const command = searchParams.get('command');
+    const type = searchParams.get('type');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 1000);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     
-    console.log(`[Message Logger] Fetching messages for client: ${clientId}, limit: ${limit}`);
+    console.log(`[Message Logger] Fetching messages - Client: ${clientId}, Command: ${command}, Type: ${type}, Limit: ${limit}`);
     
     client = await connectToDatabase();
     
-    // Build SQL query
+    // Build SQL query with enhanced filtering
     let query = 'SELECT * FROM message_logs';
     const conditions = [];
     const values = [];
@@ -76,13 +143,23 @@ export async function GET(request: NextRequest) {
       values.push(clientId);
     }
     
+    if (command) {
+      conditions.push(`command = $${++paramCount}`);
+      values.push(command);
+    }
+    
+    if (type) {
+      conditions.push(`type = $${++paramCount}`);
+      values.push(type);
+    }
+    
     if (startDate) {
       conditions.push(`timestamp >= $${++paramCount}`);
       values.push(new Date(startDate));
     }
     
     if (endDate) {
-      conditions.push(`timestamp < $${++paramCount}`);
+      conditions.push(`timestamp <= $${++paramCount}`);
       values.push(new Date(endDate));
     }
     
@@ -92,8 +169,6 @@ export async function GET(request: NextRequest) {
     
     query += ' ORDER BY timestamp DESC LIMIT $' + (++paramCount);
     values.push(limit);
-    
-    console.log(`[Message Logger] Query:`, query, 'Values:', values);
     
     const result = await client.query(query, values);
     const messages = result.rows;
@@ -116,8 +191,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       data: transformedMessages,
-      count: messages.length,
-      query: { conditions, values } // Include query for debugging
+      count: messages.length
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -127,7 +201,6 @@ export async function GET(request: NextRequest) {
       error: errorMessage 
     }, { status: 500 });
   } finally {
-    // Release the client back to the pool
     if (client) {
       client.release();
     }

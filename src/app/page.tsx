@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getAblyClient } from "@/lib/ably-client";
 import { ClientData, StatusUpdate } from "@/types/client";
 import { ClientCard } from "@/components/client-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ChannelStatus } from "@/components/channel-status";
-import { Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Activity, Database, Shield } from "lucide-react";
 import * as Ably from 'ably';
 
 export default function Home() {
+  const router = useRouter();
   const [clients, setClients] = useState<Map<string, ClientData>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState<string>('initialized');
@@ -267,7 +270,28 @@ export default function Home() {
                   </div>
                 </div>
               )}
-              <ThemeToggle />
+              
+              {/* Navigation Buttons */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/logs')}
+                  className="gap-2"
+                >
+                  <Database className="h-4 w-4" />
+                  Message Logs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/bans')}
+                  className="gap-2"
+                >
+                  <Shield className="h-4 w-4" />
+                  Manage Bans
+                </Button>
+                <ThemeToggle />
+              </div>
+              
               {mounted && (
                 <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
                   <div className={`w-3 h-3 rounded-full ${

@@ -127,11 +127,14 @@ async function logMessageToPostgreSQL(message: Ably.Message, channelName: string
       console.log('[Auto-Logger] ✅ Message-log from client stored to PostgreSQL');
     }
   } catch (error) {
-    console.error('[Auto-Logger] ❌ Failed to log message to PostgreSQL:', error);
-    console.error('[Auto-Logger] Error details:', {
-      message: error.message,
-      stack: error.stack
-    });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Auto-Logger] ❌ Failed to log message to PostgreSQL:', errorMessage);
+    if (error instanceof Error) {
+      console.error('[Auto-Logger] Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
+    }
   }
 }
 
