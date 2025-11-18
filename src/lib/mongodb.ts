@@ -47,7 +47,11 @@ async function connectDB() {
 // Export function to get database instance
 export async function connectToDatabase() {
   await connectDB();
-  return mongoose.connection.db;
+  const db = mongoose.connection.db;
+  if (!db) {
+    throw new Error('Database connection not established');
+  }
+  return db;
 }
 
 export default connectDB;

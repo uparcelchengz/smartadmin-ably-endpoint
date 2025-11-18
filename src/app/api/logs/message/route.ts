@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
       message: 'Message logged successfully',
       id: result.insertedId
     });
-  } catch (error: any) {
-    console.error('[Message Logger] Error:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[Message Logger] Error:', errorMessage);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     }, { status: 500 });
   }
 }
@@ -78,11 +79,12 @@ export async function GET(request: NextRequest) {
       count: messages.length,
       query // Include query for debugging
     });
-  } catch (error: any) {
-    console.error('[Message Logger] Error:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[Message Logger] Error:', errorMessage);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     }, { status: 500 });
   }
 }

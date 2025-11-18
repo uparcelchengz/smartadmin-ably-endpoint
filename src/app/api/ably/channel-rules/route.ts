@@ -34,11 +34,12 @@ export async function POST(request: NextRequest) {
       message: `Channel history configured for ${ttlSeconds / 3600} hours`,
       note: "Configuration applied. Messages will use enhanced retention via MongoDB auto-logging."
     });
-  } catch (error: any) {
-    console.error('[Channel Rules] Error:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[Channel Rules] Error:', errorMessage);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     }, { status: 500 });
   }
 }
@@ -65,11 +66,12 @@ export async function GET() {
       data: mockRules,
       note: "Enhanced message retention is active via MongoDB auto-logging and Ably's default 2-minute retention."
     });
-  } catch (error: any) {
-    console.error('[Channel Rules] Error:', error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[Channel Rules] Error:', errorMessage);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     }, { status: 500 });
   }
 }
