@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
         }
       },
       message: `Channel history configured for ${ttlSeconds / 3600} hours`,
-      note: "Configuration applied. Messages will use enhanced retention via MongoDB auto-logging."
+      note: "Configuration applied. Messages will use enhanced retention via PostgreSQL auto-logging."
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -64,7 +64,7 @@ export async function GET() {
     return NextResponse.json({ 
       success: true, 
       data: mockRules,
-      note: "Enhanced message retention is active via MongoDB auto-logging and Ably's default 2-minute retention."
+      note: "Enhanced message retention is active via PostgreSQL auto-logging and Ably's default 2-minute retention."
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

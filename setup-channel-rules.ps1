@@ -16,7 +16,7 @@ if ($Help) {
     Write-Host "  -Help           Show this help message"
     Write-Host ""
     Write-Host "This script configures Ably channel rules for 72-hour message retention"
-    Write-Host "and sets up automatic MongoDB logging for unlimited message history."
+    Write-Host "and sets up automatic PostgreSQL logging for unlimited message history."
     exit 0
 }
 
@@ -67,7 +67,7 @@ try {
             Write-Host ""
             Write-Host "📋 What happens now:" -ForegroundColor Cyan
             Write-Host "  • Recent messages (72 hours): Fast access via Ably channels" -ForegroundColor White
-            Write-Host "  • Older messages: Unlimited storage in MongoDB" -ForegroundColor White
+            Write-Host "  • Older messages: Unlimited storage in PostgreSQL" -ForegroundColor White
             Write-Host "  • All messages: Auto-logged for long-term persistence" -ForegroundColor White
             Write-Host "  • Client reconnections: Automatic message recovery" -ForegroundColor White
             Write-Host ""
@@ -85,7 +85,7 @@ try {
         Write-Host "🔧 Troubleshooting:" -ForegroundColor Cyan
         Write-Host "  • Check that your dashboard is running" -ForegroundColor White
         Write-Host "  • Verify the Ably API key is correct" -ForegroundColor White
-        Write-Host "  • Ensure MongoDB connection is working" -ForegroundColor White
+        Write-Host "  • Ensure PostgreSQL connection is working" -ForegroundColor White
         exit 1
     }
 } catch {

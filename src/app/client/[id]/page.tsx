@@ -140,7 +140,7 @@ export default function ClientDetailPage() {
           ? Math.min(...allMessages.map(m => new Date(m.timestamp).getTime()))
           : Date.now();
         
-        console.log('[Client Detail] Loading older messages from MongoDB...');
+        console.log('[Client Detail] Loading older messages from PostgreSQL...');
         const mongoResponse = await fetch(
           `/api/logs/message?clientId=${clientId}&endDate=${new Date(ablyOldestTimestamp).toISOString()}&limit=100`
         );
@@ -150,7 +150,7 @@ export default function ClientDetailPage() {
           if (mongoData.success && mongoData.data.length > 0) {
             mongoData.data.forEach((msg: { _id?: string; messageId?: string; clientId: string; type: string; command: string; payload: Record<string, unknown>; timestamp: string }) => {
               allMessages.push({
-                id: msg._id || msg.messageId || `mongo-${Date.now()}`,
+                id: msg._id || msg.messageId || `postgres-${Date.now()}`,
                 clientId: msg.clientId,
                 type: msg.type as 'sent' | 'received',
                 command: msg.command,
@@ -158,7 +158,7 @@ export default function ClientDetailPage() {
                 timestamp: new Date(msg.timestamp).toISOString()
               });
             });
-            console.log(`[Client Detail] ✓ Added ${mongoData.data.length} older messages from MongoDB`);
+            console.log(`[Client Detail] ✓ Added ${mongoData.data.length} older messages from PostgreSQL`);
           }
         }
         
@@ -170,14 +170,14 @@ export default function ClientDetailPage() {
         );
         
         setMessages(uniqueMessages);
-        console.log(`[Client Detail] ✓ Total loaded: ${uniqueMessages.length} messages (Ably + MongoDB)`);
+        console.log(`[Client Detail] ✓ Total loaded: ${uniqueMessages.length} messages (Ably + PostgreSQL)`);
         
       } catch (err) {
         console.error("[Client Detail] ✗ Error loading message history:", err);
         
-        // Fallback to MongoDB only
+        // Fallback to PostgreSQL only
         try {
-          console.log('[Client Detail] Falling back to MongoDB only...');
+          console.log('[Client Detail] Falling back to PostgreSQL only...');
           const mongoResponse = await fetch(`/api/logs/message?clientId=${clientId}&limit=200`);
           const mongoData = await mongoResponse.json();
           
@@ -192,7 +192,7 @@ export default function ClientDetailPage() {
             }));
             
             setMessages(mongoMessages);
-            console.log(`[Client Detail] ✓ Fallback loaded ${mongoMessages.length} messages from MongoDB`);
+            console.log(`[Client Detail] ✓ Fallback loaded ${mongoMessages.length} messages from PostgreSQL`);
           }
         } catch (fallbackErr) {
           console.error("[Client Detail] ✗ Fallback also failed:", fallbackErr);
@@ -232,9 +232,9 @@ export default function ClientDetailPage() {
           return [...prev, newMessage];
         });
 
-        // Log received message to MongoDB (including disconnecting)
+        // Log received message to PostgreSQL (including disconnecting)
         console.log('[Client Detail] New message received:', update.type);
-        console.log('[Client Detail] Logging received message to MongoDB:', update.type);
+        console.log('[Client Detail] Logging received message to PostgreSQL:', update.type);
         try {
           const response = await fetch('/api/logs/message', {
             method: 'POST',
@@ -252,7 +252,7 @@ export default function ClientDetailPage() {
           
           const data = await response.json();
           if (data.success) {
-            console.log('[Client Detail] ✓ Received message logged to MongoDB:', update.type);
+            console.log('[Client Detail] ✓ Received message logged to PostgreSQL:', update.type);
           } else {
             console.error('[Client Detail] ✗ Failed to log received message:', data.error);
           }
@@ -310,8 +310,8 @@ export default function ClientDetailPage() {
 
     await controlChannel.publish("command", message);
     
-    // Log sent message to MongoDB
-    console.log('[Client Detail] Logging command to MongoDB:', command);
+    // Log sent message to PostgreSQL
+    console.log('[Client Detail] Logging command to PostgreSQL:', command);
     try {
       const response = await fetch('/api/logs/message', {
         method: 'POST',
@@ -329,7 +329,7 @@ export default function ClientDetailPage() {
       
       const data = await response.json();
       if (data.success) {
-        console.log('[Client Detail] ✓ Command logged to MongoDB');
+        console.log('[Client Detail] ✓ Command logged to PostgreSQL');
       } else {
         console.error('[Client Detail] ✗ Failed to log command:', data.error);
       }
@@ -581,7 +581,7 @@ export default function ClientDetailPage() {
                   Message Log
                   <Badge variant="outline" className="text-xs">
                     <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></span>
-                    Live from Ably
+                    Live + PostgreSQL
                   </Badge>
                 </CardTitle>
               </CardHeader>
@@ -590,7 +590,7 @@ export default function ClientDetailPage() {
                   {isLoadingHistory ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       <Activity className="h-6 w-6 animate-spin mx-auto mb-2" />
-                      Loading message history from Ably...
+                      Loading message history from Ably + PostgreSQL...
                     </div>
                   ) : messages.length === 0 ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">

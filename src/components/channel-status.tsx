@@ -122,7 +122,7 @@ export function ChannelStatus() {
               <h4 className="font-medium mb-2">🚀 What you&apos;ll get:</h4>
               <ul className="text-sm text-left space-y-1 max-w-sm mx-auto">
                 <li>• <strong>72-hour Ably retention</strong> - Fast access to recent messages</li>
-                <li>• <strong>Unlimited MongoDB storage</strong> - Long-term message history</li>
+                <li>• <strong>Unlimited PostgreSQL storage</strong> - Long-term message history</li>
                 <li>• <strong>Automatic message logging</strong> - All commands & status updates</li>
                 <li>• <strong>Hybrid loading strategy</strong> - Best performance & coverage</li>
                 <li>• <strong>Message recovery on reconnect</strong> - No lost commands</li>
@@ -175,8 +175,8 @@ export function ChannelStatus() {
                   </div>
                 )}
                 
-                <div className="mt-3 text-xs text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-800/30 rounded px-2 py-1">
-                  📊 Enhanced message persistence active - Recent messages via Ably, unlimited history via MongoDB
+                <div className="text-xs text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-800/30 rounded px-2 py-1">
+                  📊 Enhanced message persistence active - Recent messages via Ably, unlimited history via PostgreSQL
                 </div>
               </div>
             ))}
@@ -188,7 +188,7 @@ export function ChannelStatus() {
               <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
                 <p>• <strong>Real-time messaging:</strong> Immediate delivery via Ably channels</p>
                 <p>• <strong>Recent history:</strong> Fast access to last 72 hours via Ably</p>
-                <p>• <strong>Long-term storage:</strong> Unlimited history in MongoDB</p>
+                <p>• <strong>Long-term storage:</strong> Unlimited history in PostgreSQL</p>
                 <p>• <strong>Smart loading:</strong> Client details load from both sources</p>
                 <p>• <strong>Auto-recovery:</strong> Clients get recent messages on reconnect</p>
               </div>

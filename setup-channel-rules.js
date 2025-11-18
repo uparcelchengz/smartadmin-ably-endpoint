@@ -57,7 +57,7 @@ async function setupChannelRules() {
         console.log('');
         console.log('📋 What happens now:');
         console.log('  • Recent messages (72 hours): Fast access via Ably channels');
-        console.log('  • Older messages: Unlimited storage in MongoDB');
+        console.log('  • Older messages: Unlimited storage in PostgreSQL');
         console.log('  • All messages: Auto-logged for long-term persistence');
         console.log('  • Client reconnections: Automatic message recovery');
         console.log('');
@@ -75,7 +75,7 @@ async function setupChannelRules() {
       console.log('🔧 Troubleshooting:');
       console.log('  • Check that your dashboard is running');
       console.log('  • Verify the Ably API key is correct');
-      console.log('  • Ensure MongoDB connection is working');
+      console.log('  • Ensure PostgreSQL connection is working');
       process.exit(1);
     }
   } catch (error) {
@@ -103,8 +103,8 @@ if (args.includes('--help') || args.includes('-h')) {
   console.log('Environment Variables:');
   console.log('  DASHBOARD_URL  URL of your dashboard (default: http://localhost:3000)');
   console.log('');
-  console.log('This script configures Ably channel rules for 72-hour message retention');
-  console.log('and sets up automatic MongoDB logging for unlimited message history.');
+console.log('This script configures Ably channel rules for 72-hour message retention');
+console.log('and sets up automatic PostgreSQL logging for unlimited message history.');
   process.exit(0);
 }
 
