@@ -4,14 +4,7 @@ import { connectToDatabase } from '@/lib/database';
 interface AblyWebhookMessage {
   id?: string;
   name?: string;
-  data?: {
-    clientId?: string;
-    type?: string;
-    command?: string;
-    targetClientId?: string;
-    payload?: Record<string, unknown>;
-    data?: Record<string, unknown>;
-  };
+  data?: Record<string, unknown>;
   timestamp?: number;
 }
 
@@ -21,24 +14,65 @@ export async function POST(request: NextRequest) {
     console.log('[Ably Webhook] Received webhook from Ably');
     
     const body = await request.json();
-    console.log('[Ably Webhook] Payload:', JSON.stringify(body, null, 2));
+    console.log('[Ably Webhook] Raw payload:', JSON.stringify(body, null, 2));
     
-    // Ably sends an array of messages in webhooks
-    const messages = Array.isArray(body) ? body : [body];
+    // Ably Integration Rules send data in a specific format
+    // Let's handle both possible formats: direct array or enveloped format
+    let messages = [];
+    
+    if (Array.isArray(body)) {
+      console.log('[Ably Webhook] Processing as direct array format');
+      messages = body;
+    } else if (body.messages && Array.isArray(body.messages)) {
+      console.log('[Ably Webhook] Processing as enveloped format with messages array');
+      messages = body.messages;
+    } else if (body.name && body.data) {
+      console.log('[Ably Webhook] Processing as single message format');
+      messages = [body];
+    } else {
+      console.log('[Ably Webhook] Unknown payload format, trying to extract messages');
+      // Try to find messages in any nested structure
+      const findMessages = (obj: unknown): unknown[] => {
+        if (Array.isArray(obj)) return obj;
+        if (obj && typeof obj === 'object') {
+          const objRecord = obj as Record<string, unknown>;
+          for (const key in objRecord) {
+            if (key === 'messages' && Array.isArray(objRecord[key])) {
+              return objRecord[key] as unknown[];
+            }
+            const found = findMessages(objRecord[key]);
+            if (found.length > 0) return found;
+          }
+        }
+        return [];
+      };
+      messages = findMessages(body);
+      if (messages.length === 0 && body.name) {
+        messages = [body]; // Fallback to treating the whole body as a message
+      }
+    }
+    
+    console.log(`[Ably Webhook] Found ${messages.length} messages to process`);
     
     client = await connectToDatabase();
     
     let processedCount = 0;
     for (const message of messages) {
+      console.log(`[Ably Webhook] Processing message:`, JSON.stringify(message, null, 2));
       const processed = await processAblyMessage(message, client);
       if (processed) processedCount++;
     }
     
-    console.log(`[Ably Webhook] ✓ Processed ${processedCount} messages`);
+    console.log(`[Ably Webhook] ✓ Processed ${processedCount} out of ${messages.length} messages`);
     return NextResponse.json({ 
       success: true, 
       processedMessages: processedCount,
-      totalMessages: messages.length
+      totalMessages: messages.length,
+      debugInfo: {
+        originalPayloadType: Array.isArray(body) ? 'array' : typeof body,
+        hasMessagesProperty: !!(body.messages),
+        messagesFound: messages.length
+      }
     });
     
   } catch (error) {
@@ -53,18 +87,25 @@ export async function POST(request: NextRequest) {
 
 async function processAblyMessage(message: AblyWebhookMessage, client: { query: (text: string, params: unknown[]) => Promise<{ rowCount: number }> }): Promise<boolean> {
   try {
+    console.log(`[Ably Webhook] Processing individual message:`, JSON.stringify(message, null, 2));
+    
     const { name: channelName, data: messageData, timestamp, id } = message;
     
-    console.log(`[Ably Webhook] Processing message from channel: ${channelName}`);
+    console.log(`[Ably Webhook] Extracted - Channel: ${channelName}, Data:`, messageData);
     
-    if (!channelName || !messageData) {
-      console.log('[Ably Webhook] Skipping: Missing channel name or message data');
+    if (!channelName) {
+      console.log('[Ably Webhook] Skipping: Missing channel name');
+      return false;
+    }
+    
+    if (!messageData) {
+      console.log('[Ably Webhook] Skipping: Missing message data');
       return false;
     }
     
     // Skip non-smartadmin channels
     if (!channelName.startsWith('smartadmin-')) {
-      console.log('[Ably Webhook] Skipping: Not a smartadmin channel');
+      console.log(`[Ably Webhook] Skipping: Not a smartadmin channel (${channelName})`);
       return false;
     }
     
@@ -73,31 +114,53 @@ async function processAblyMessage(message: AblyWebhookMessage, client: { query: 
     let command: string;
     let payload: Record<string, unknown>;
     
+    // Handle different message data structures
     if (channelName.includes('status')) {
       // Status update (received from client)
-      clientId = messageData.clientId || 'unknown';
+      clientId = (messageData as Record<string, unknown>).clientId as string || 
+                (messageData as Record<string, unknown>).client_id as string || 'unknown';
       type = 'received';
-      command = messageData.type || 'status-update';
-      payload = messageData.data || {};
+      command = (messageData as Record<string, unknown>).type as string || 
+               (messageData as Record<string, unknown>).command as string || 'status-update';
+      payload = (messageData as Record<string, unknown>).data as Record<string, unknown> || 
+               (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
+               messageData;
       
       console.log(`[Ably Webhook] Status message from client ${clientId}: ${command}`);
       
     } else if (channelName.includes('control')) {
       // Control command (sent to client)
-      clientId = messageData.targetClientId || 'broadcast';
+      clientId = (messageData as Record<string, unknown>).targetClientId as string || 
+                (messageData as Record<string, unknown>).target_client_id as string || 'broadcast';
       type = 'sent';
-      command = messageData.command || 'unknown';
-      payload = messageData.payload || {};
+      command = (messageData as Record<string, unknown>).command as string || 
+               (messageData as Record<string, unknown>).type as string || 'unknown';
+      payload = (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
+               (messageData as Record<string, unknown>).data as Record<string, unknown> || 
+               messageData;
       
       console.log(`[Ably Webhook] Control message to client ${clientId}: ${command}`);
       
     } else {
-      console.log(`[Ably Webhook] Skipping: Unknown channel type: ${channelName}`);
-      return false;
+      // Generic smartadmin message - try to extract what we can
+      clientId = (messageData as Record<string, unknown>).clientId as string || 
+                (messageData as Record<string, unknown>).client_id as string || 
+                (messageData as Record<string, unknown>).id as string || 'unknown';
+      type = 'received';
+      command = (messageData as Record<string, unknown>).command as string || 
+               (messageData as Record<string, unknown>).type as string || 
+               (messageData as Record<string, unknown>).action as string || 'message';
+      payload = (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
+               (messageData as Record<string, unknown>).data as Record<string, unknown> || 
+               messageData;
+      
+      console.log(`[Ably Webhook] Generic smartadmin message from ${clientId}: ${command}`);
     }
     
+    console.log(`[Ably Webhook] Final processing - ClientId: ${clientId}, Command: ${command}, Type: ${type}`);
+    
     if (!clientId || !command) {
-      console.log('[Ably Webhook] Skipping: Missing clientId or command');
+      console.log(`[Ably Webhook] Skipping: Missing required fields (clientId: ${clientId}, command: ${command})`);
       return false;
     }
     
@@ -107,8 +170,9 @@ async function processAblyMessage(message: AblyWebhookMessage, client: { query: 
       ON CONFLICT (message_id) DO NOTHING;
     `;
     
+    const messageId = id || `webhook-${channelName}-${Date.now()}-${Math.random()}`;
     const values = [
-      id || `webhook-${channelName}-${Date.now()}-${Math.random()}`,
+      messageId,
       clientId,
       type,
       channelName,
@@ -117,18 +181,21 @@ async function processAblyMessage(message: AblyWebhookMessage, client: { query: 
       new Date(timestamp || Date.now())
     ];
     
+    console.log(`[Ably Webhook] Attempting to insert with values:`, values);
+    
     const result = await client.query(insertQuery, values);
     
     if (result.rowCount > 0) {
-      console.log(`[Ably Webhook] ✓ Saved ${type} message: ${command} from ${clientId}`);
+      console.log(`[Ably Webhook] ✓ Successfully saved ${type} message: ${command} from ${clientId} (ID: ${messageId})`);
       return true;
     } else {
-      console.log(`[Ably Webhook] ⚠ Message already exists (duplicate): ${id}`);
+      console.log(`[Ably Webhook] ⚠ Message already exists or insert failed (ID: ${messageId})`);
       return false;
     }
     
   } catch (error) {
     console.error('[Ably Webhook] Error processing message:', error);
+    console.error('[Ably Webhook] Message that failed:', JSON.stringify(message, null, 2));
     return false;
   }
 }
