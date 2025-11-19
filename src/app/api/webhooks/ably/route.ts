@@ -104,83 +104,106 @@ export async function POST(request: NextRequest) {
 
 async function processAblyMessage(message: AblyWebhookMessage, client: { query: (text: string, params: unknown[]) => Promise<{ rowCount: number }> }): Promise<boolean> {
   try {
-    console.log(`[Ably Webhook] Processing individual message:`, JSON.stringify(message, null, 2));
+    console.log(`[Ably Webhook] ===== PROCESSING MESSAGE =====`);
+    console.log(`[Ably Webhook] Full message object:`, JSON.stringify(message, null, 2));
     
     const { name: channelName, data: messageData, timestamp, id } = message;
     
-    console.log(`[Ably Webhook] Extracted - Channel: ${channelName}, Data:`, messageData);
+    console.log(`[Ably Webhook] Extracted fields:`);
+    console.log(`  - Channel: ${channelName}`);
+    console.log(`  - Data:`, JSON.stringify(messageData, null, 2));
+    console.log(`  - Timestamp: ${timestamp}`);
+    console.log(`  - ID: ${id}`);
     
     if (!channelName) {
-      console.log('[Ably Webhook] Skipping: Missing channel name');
+      console.log('[Ably Webhook] ❌ SKIPPED: Missing channel name');
       return false;
     }
     
     if (!messageData) {
-      console.log('[Ably Webhook] Skipping: Missing message data');
+      console.log('[Ably Webhook] ❌ SKIPPED: Missing message data');
       return false;
     }
     
-    // Skip non-smartadmin channels
-    if (!channelName.startsWith('smartadmin-')) {
-      console.log(`[Ably Webhook] Skipping: Not a smartadmin channel (${channelName})`);
+    // More permissive channel filtering - log what we're checking
+    console.log(`[Ably Webhook] Channel check: "${channelName}" contains "smartadmin"?`, channelName.includes('smartadmin'));
+    
+    if (!channelName.includes('smartadmin')) {
+      console.log(`[Ably Webhook] ❌ SKIPPED: Not a smartadmin channel (${channelName})`);
       return false;
     }
     
-    let clientId: string;
-    let type: 'sent' | 'received';
-    let command: string;
-    let payload: Record<string, unknown>;
+    // Try multiple ways to extract client info
+    let clientId: string = 'unknown';
+    let type: 'sent' | 'received' = 'received';
+    let command: string = 'unknown';
+    let payload: Record<string, unknown> = {};
     
-    // Handle different message data structures
-    if (channelName.includes('status')) {
-      // Status update (received from client)
-      clientId = (messageData as Record<string, unknown>).clientId as string || 
-                (messageData as Record<string, unknown>).client_id as string || 'unknown';
-      type = 'received';
-      command = (messageData as Record<string, unknown>).type as string || 
-               (messageData as Record<string, unknown>).command as string || 'status-update';
-      payload = (messageData as Record<string, unknown>).data as Record<string, unknown> || 
-               (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
-               messageData;
-      
-      console.log(`[Ably Webhook] Status message from client ${clientId}: ${command}`);
-      
-    } else if (channelName.includes('control')) {
-      // Control command (sent to client)
-      clientId = (messageData as Record<string, unknown>).targetClientId as string || 
-                (messageData as Record<string, unknown>).target_client_id as string || 'broadcast';
-      type = 'sent';
-      command = (messageData as Record<string, unknown>).command as string || 
-               (messageData as Record<string, unknown>).type as string || 'unknown';
-      payload = (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
-               (messageData as Record<string, unknown>).data as Record<string, unknown> || 
-               messageData;
-      
-      console.log(`[Ably Webhook] Control message to client ${clientId}: ${command}`);
-      
+    const messageDataRecord = messageData as Record<string, unknown>;
+    
+    console.log(`[Ably Webhook] Attempting to extract client info from:`, Object.keys(messageDataRecord));
+    
+    // Extract clientId - try multiple field names
+    const possibleClientIds = [
+      messageDataRecord.clientId,
+      messageDataRecord.client_id,
+      messageDataRecord.id,
+      messageDataRecord.from,
+      messageDataRecord.sender
+    ].filter(Boolean);
+    
+    if (possibleClientIds.length > 0) {
+      clientId = String(possibleClientIds[0]);
+    }
+    
+    // Extract command/type - try multiple field names
+    const possibleCommands = [
+      messageDataRecord.command,
+      messageDataRecord.type,
+      messageDataRecord.action,
+      messageDataRecord.event,
+      messageDataRecord.name
+    ].filter(Boolean);
+    
+    if (possibleCommands.length > 0) {
+      command = String(possibleCommands[0]);
+    }
+    
+    // Extract payload - try to get the most relevant data
+    if (messageDataRecord.data && typeof messageDataRecord.data === 'object') {
+      payload = messageDataRecord.data as Record<string, unknown>;
+    } else if (messageDataRecord.payload && typeof messageDataRecord.payload === 'object') {
+      payload = messageDataRecord.payload as Record<string, unknown>;
     } else {
-      // Generic smartadmin message - try to extract what we can
-      clientId = (messageData as Record<string, unknown>).clientId as string || 
-                (messageData as Record<string, unknown>).client_id as string || 
-                (messageData as Record<string, unknown>).id as string || 'unknown';
+      payload = messageDataRecord;
+    }
+    
+    // Handle different channel types for better classification
+    if (channelName.includes('status')) {
       type = 'received';
-      command = (messageData as Record<string, unknown>).command as string || 
-               (messageData as Record<string, unknown>).type as string || 
-               (messageData as Record<string, unknown>).action as string || 'message';
-      payload = (messageData as Record<string, unknown>).payload as Record<string, unknown> || 
-               (messageData as Record<string, unknown>).data as Record<string, unknown> || 
-               messageData;
+      if (command === 'unknown') command = 'status-update';
+    } else if (channelName.includes('control')) {
+      type = 'sent';
+      // For control messages, try to get target client
+      const targetIds = [
+        messageDataRecord.targetClientId,
+        messageDataRecord.target_client_id,
+        messageDataRecord.to,
+        messageDataRecord.recipient
+      ].filter(Boolean);
       
-      console.log(`[Ably Webhook] Generic smartadmin message from ${clientId}: ${command}`);
+      if (targetIds.length > 0) {
+        clientId = String(targetIds[0]);
+      }
     }
     
-    console.log(`[Ably Webhook] Final processing - ClientId: ${clientId}, Command: ${command}, Type: ${type}`);
+    console.log(`[Ably Webhook] Extracted values:`);
+    console.log(`  - Client ID: "${clientId}"`);
+    console.log(`  - Command: "${command}"`);
+    console.log(`  - Type: "${type}"`);
+    console.log(`  - Payload:`, JSON.stringify(payload, null, 2));
     
-    if (!clientId || !command) {
-      console.log(`[Ably Webhook] Skipping: Missing required fields (clientId: ${clientId}, command: ${command})`);
-      return false;
-    }
-    
+    // Even if we have minimal info, try to save it for debugging
     const insertQuery = `
       INSERT INTO message_logs (message_id, client_id, type, channel, command, payload, timestamp)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -198,21 +221,22 @@ async function processAblyMessage(message: AblyWebhookMessage, client: { query: 
       new Date(timestamp || Date.now())
     ];
     
-    console.log(`[Ably Webhook] Attempting to insert with values:`, values);
+    console.log(`[Ably Webhook] Attempting database insert with values:`, values);
     
     const result = await client.query(insertQuery, values);
     
     if (result.rowCount > 0) {
-      console.log(`[Ably Webhook] ✓ Successfully saved ${type} message: ${command} from ${clientId} (ID: ${messageId})`);
+      console.log(`[Ably Webhook] ✅ Successfully saved ${type} message: ${command} from ${clientId} (ID: ${messageId})`);
       return true;
     } else {
-      console.log(`[Ably Webhook] ⚠ Message already exists or insert failed (ID: ${messageId})`);
+      console.log(`[Ably Webhook] ⚠️ Message already exists or insert failed (ID: ${messageId})`);
       return false;
     }
     
   } catch (error) {
-    console.error('[Ably Webhook] Error processing message:', error);
-    console.error('[Ably Webhook] Message that failed:', JSON.stringify(message, null, 2));
+    console.error('[Ably Webhook] ❌ ERROR processing message:', error);
+    console.error('[Ably Webhook] Failed message:', JSON.stringify(message, null, 2));
+    console.error('[Ably Webhook] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return false;
   }
 }
