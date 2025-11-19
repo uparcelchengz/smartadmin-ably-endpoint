@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LogoutButton } from "@/components/logout-button";
 import { 
   ArrowLeft, 
   Activity, 
@@ -661,13 +662,16 @@ export default function ClientDetailPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </Button>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <LogoutButton />
+            <ThemeToggle />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Client Info */}
           <div className="lg:col-span-1">
-            <Card className="h-[calc(100vh-12rem)]">
+            <Card className="h-[calc(100vh-8rem)]">
               <CardHeader>
                 <CardTitle>Client Information</CardTitle>
               </CardHeader>
@@ -733,7 +737,7 @@ export default function ClientDetailPage() {
 
           {/* Message Log */}
           <div className="lg:col-span-1">
-            <Card className="h-[calc(100vh-12rem)]">
+            <Card className="h-[calc(100vh-8rem)]">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   Message Log
@@ -741,10 +745,13 @@ export default function ClientDetailPage() {
                     <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></span>
                     Live + PostgreSQL
                   </Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    {messages.length} messages
+                  </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex flex-col h-[calc(100%-5rem)]">
-                <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+              <CardContent className="flex flex-col h-[calc(100%-4rem)]">
+                <div className="flex-1 overflow-y-auto space-y-2 mb-4">
                   {isLoadingHistory ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       <Activity className="h-6 w-6 animate-spin mx-auto mb-2" />
@@ -758,13 +765,13 @@ export default function ClientDetailPage() {
                     messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`p-3 rounded-lg ${
+                        className={`p-2 rounded-lg ${
                           msg.type === 'sent'
-                            ? 'bg-blue-50 dark:bg-blue-900/20 ml-8'
-                            : 'bg-gray-50 dark:bg-gray-800 mr-8'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 ml-6'
+                            : 'bg-gray-50 dark:bg-gray-800 mr-6'
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-1">
                           <Badge variant={msg.type === 'sent' ? 'default' : 'outline'} className="text-xs">
                             {msg.type === 'sent' ? 'Sent' : 'Received'}
                           </Badge>
@@ -780,10 +787,10 @@ export default function ClientDetailPage() {
                             </Badge>
                           )}
                         </div>
-                        <div className="text-sm">
+                        <div className="text-xs">
                           {msg.command === 'message-log' && typeof msg.data.message === 'string' ? (
                             // Special display for message-log entries
-                            <div className="space-y-2">
+                            <div className="space-y-1">
                               <div className="font-medium text-blue-700 dark:text-blue-400">
                                 📄 {msg.data.message}
                               </div>
@@ -812,7 +819,7 @@ export default function ClientDetailPage() {
                                     <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
                                       📋 Additional Data ({Object.keys(additionalFields).length} fields)
                                     </summary>
-                                    <pre className="mt-2 whitespace-pre-wrap break-all bg-gray-100 dark:bg-gray-700 p-2 rounded text-xs">
+                                    <pre className="mt-1 whitespace-pre-wrap break-all bg-gray-100 dark:bg-gray-700 p-1 rounded text-xs">
                                       {JSON.stringify(additionalFields, null, 2)}
                                     </pre>
                                   </details>
@@ -852,20 +859,22 @@ export default function ClientDetailPage() {
                 </div>
                 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-2 gap-2 mt-4">
+                <div className="grid grid-cols-3 gap-1 mt-2">
                   <Button
                     onClick={() => setShowNotificationModal(true)}
                     disabled={isLoading}
                     variant="outline"
-                    className="gap-2"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1"
                   >
-                    🔔 Send Notification
+                    🔔 Notify
                   </Button>
                   <Button
                     onClick={() => sendCommand('ping')}
                     disabled={isLoading}
                     variant="outline"
-                    className="gap-2"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1"
                   >
                     📡 Ping
                   </Button>
@@ -873,33 +882,37 @@ export default function ClientDetailPage() {
                     onClick={() => sendCommand('getstatus')}
                     disabled={isLoading}
                     variant="outline"
-                    className="gap-2"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1"
                   >
-                    📊 Get Status
+                    📊 Status
                   </Button>
                   <Button
                     onClick={() => sendCommand('restart')}
                     disabled={isLoading}
                     variant="outline"
-                    className="gap-2"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1"
                   >
                     🔄 Restart
                   </Button>
                   <Button
                     onClick={() => sendCommand('shutdown')}
                     disabled={isLoading}
-                    variant="destructive"
-                    className="gap-2"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
                     ⚡ Shutdown
                   </Button>
                   <Button
                     onClick={handleBanClient}
                     disabled={isBanning || !client?.clientIP}
-                    variant="destructive"
-                    className="gap-2"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs px-2 py-1 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
-                    🛡️ {isBanning ? 'Banning...' : 'Ban Client IP'}
+                    🛡️ {isBanning ? 'Banning...' : 'Ban'}
                   </Button>
                 </div>
               </CardContent>

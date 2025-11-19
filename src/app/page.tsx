@@ -7,6 +7,7 @@ import { ClientData, StatusUpdate } from "@/types/client";
 import { ClientCard } from "@/components/client-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ChannelStatus } from "@/components/channel-status";
+import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
 import { Activity, Database, Shield } from "lucide-react";
 import * as Ably from 'ably';
@@ -289,6 +290,7 @@ export default function Home() {
                   <Shield className="h-4 w-4" />
                   Manage Bans
                 </Button>
+                <LogoutButton />
                 <ThemeToggle />
               </div>
               
