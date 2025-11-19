@@ -66,8 +66,9 @@ async function ensureTablesExist(client: PoolClient): Promise<void> {
     
     await client.query(createTableQuery);
     
-    // Create indexes for better performance
+    // Create unique constraint and indexes for better performance
     const createIndexQueries = [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_message_logs_message_id_unique ON message_logs(message_id);',
       'CREATE INDEX IF NOT EXISTS idx_message_logs_client_id ON message_logs(client_id);',
       'CREATE INDEX IF NOT EXISTS idx_message_logs_timestamp ON message_logs(timestamp);',
       'CREATE INDEX IF NOT EXISTS idx_message_logs_type ON message_logs(type);',
