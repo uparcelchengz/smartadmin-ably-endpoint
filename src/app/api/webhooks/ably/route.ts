@@ -11,9 +11,19 @@ interface AblyWebhookMessage {
 export async function POST(request: NextRequest) {
   let client;
   try {
-    console.log('[Ably Webhook] Received webhook from Ably');
+    console.log('[Ably Webhook] ===== NEW WEBHOOK REQUEST =====');
+    console.log('[Ably Webhook] Timestamp:', new Date().toISOString());
+    
+    // Log request headers
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    console.log('[Ably Webhook] Headers:', JSON.stringify(headers, null, 2));
     
     const body = await request.json();
+    console.log('[Ably Webhook] Raw payload type:', typeof body);
+    console.log('[Ably Webhook] Raw payload is array:', Array.isArray(body));
     console.log('[Ably Webhook] Raw payload:', JSON.stringify(body, null, 2));
     
     // Ably Integration Rules send data in a specific format
@@ -57,13 +67,18 @@ export async function POST(request: NextRequest) {
     client = await connectToDatabase();
     
     let processedCount = 0;
-    for (const message of messages) {
-      console.log(`[Ably Webhook] Processing message:`, JSON.stringify(message, null, 2));
+    for (let i = 0; i < messages.length; i++) {
+      const message = messages[i];
+      console.log(`[Ably Webhook] ===== PROCESSING MESSAGE ${i + 1}/${messages.length} =====`);
+      console.log(`[Ably Webhook] Message structure:`, JSON.stringify(message, null, 2));
+      
       const processed = await processAblyMessage(message, client);
       if (processed) processedCount++;
     }
     
+    console.log(`[Ably Webhook] ===== WEBHOOK COMPLETE =====`);
     console.log(`[Ably Webhook] ✓ Processed ${processedCount} out of ${messages.length} messages`);
+    
     return NextResponse.json({ 
       success: true, 
       processedMessages: processedCount,
@@ -71,11 +86,13 @@ export async function POST(request: NextRequest) {
       debugInfo: {
         originalPayloadType: Array.isArray(body) ? 'array' : typeof body,
         hasMessagesProperty: !!(body.messages),
-        messagesFound: messages.length
+        messagesFound: messages.length,
+        timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
+    console.error('[Ably Webhook] ===== ERROR =====');
     console.error('[Ably Webhook] Error:', error);
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   } finally {
