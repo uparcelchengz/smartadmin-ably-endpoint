@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/database';
 
 interface AblyWebhookMessage {
   id?: string;
+  name?: string;
   data?: {
     clientId?: string;
     type?: string;
