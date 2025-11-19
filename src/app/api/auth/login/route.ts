@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
     const validUsername = process.env.ADMIN_USERNAME;
     const validPassword = process.env.ADMIN_PASSWORD;
 
-    if (!validUsername || !validPassword) {
-      console.error('[Auth] Missing environment variables: ADMIN_USERNAME or ADMIN_PASSWORD');
+    if (!validUsername || !validPassword || !process.env.JWT_SECRET) {
+      console.error('[Auth] Missing environment variables: ADMIN_USERNAME, ADMIN_PASSWORD, or JWT_SECRET');
       return NextResponse.json({
         success: false,
         error: 'Server configuration error'

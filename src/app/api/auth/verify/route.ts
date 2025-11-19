@@ -15,6 +15,14 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
+    if (!process.env.JWT_SECRET) {
+      console.error('[Auth] Missing JWT_SECRET environment variable');
+      return NextResponse.json({
+        success: false,
+        error: 'Server configuration error'
+      }, { status: 500 });
+    }
+
     // Verify JWT token
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     
