@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ChannelStatus } from "@/components/channel-status";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
-import { Activity, Database, Shield } from "lucide-react";
+import { Activity, Database, Shield, CheckCircle, ListTodo } from "lucide-react";
 import * as Ably from 'ably';
 
 export default function Home() {
@@ -289,6 +289,22 @@ export default function Home() {
                 >
                   <Shield className="h-4 w-4" />
                   Manage Bans
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/task-whitelist')}
+                  className="gap-2"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Task Whitelist
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/task-queue')}
+                  className="gap-2"
+                >
+                  <ListTodo className="h-4 w-4" />
+                  Task Queue
                 </Button>
                 <LogoutButton />
                 <ThemeToggle />
