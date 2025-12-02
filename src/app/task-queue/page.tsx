@@ -23,7 +23,7 @@ interface TaskQueueItem {
   email?: string;
   ip?: string;
   status: 'pending' | 'approved' | 'rejected';
-  objectData?: unknown;
+  objectData?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +34,7 @@ interface TaskAPIItem {
   email?: string;
   ip?: string;
   status: 'pending' | 'approved' | 'rejected';
-  objectData?: unknown;
+  objectData?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -368,24 +368,22 @@ export default function TaskQueuePage() {
                             <div>
                               <span className="font-medium">Updated:</span> {formatTimestamp(task.updatedAt)}
                             </div>
-                          )}
-                        </div>
-                        
-                        {task.objectData && (
-                          <div className="mb-3">
-                            <details>
-                              <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Object Data
-                              </summary>
-                              <pre className="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-x-auto">
-                                {JSON.stringify(task.objectData, null, 2)}
-                              </pre>
-                            </details>
-                          </div>
                         )}
                       </div>
                       
-                      {task.status === 'pending' && (
+                      {task.objectData && task.objectData !== null && (
+                        <div className="mb-3">
+                          <details>
+                            <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Object Data
+                            </summary>
+                            <pre className="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-x-auto">
+                              {JSON.stringify(task.objectData, null, 2)}
+                            </pre>
+                          </details>
+                        </div>
+                      )}
+                    </div>                      {task.status === 'pending' && (
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
