@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/database';
 import { v4 as uuidv4 } from 'uuid';
+import * as Ably from 'ably';
 
 // GET - Retrieve all tasks or get specific task by task_id
 export async function GET(request: NextRequest) {
@@ -185,6 +186,21 @@ export async function PATCH(request: NextRequest) {
     const updatedTask = updateResult.rows[0];
     console.log(`[Task Queue API] ✓ Updated task ${taskId} status to: ${status}`);
 
+    // Send Ably notification to client
+    try {
+      await sendTaskStatusNotification({
+        taskId: updatedTask.task_id,
+        status: updatedTask.status,
+        email: updatedTask.email,
+        ip: updatedTask.ip,
+        objectData: updatedTask.object_data
+      });
+      console.log(`[Task Queue API] ✓ Sent Ably notification for task ${taskId}`);
+    } catch (ablyError) {
+      console.error(`[Task Queue API] ⚠️ Failed to send Ably notification:`, ablyError);
+      // Don't fail the request if Ably notification fails
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -268,5 +284,73 @@ export async function DELETE(request: NextRequest) {
     if (client) {
       client.release();
     }
+  }
+}
+// Helper function to send task status notifications via Ably
+async function sendTaskStatusNotification(task: {
+  taskId: string;
+  status: string;
+  email?: string;
+  ip?: string;
+  objectData?: Record<string, unknown>;
+}) {
+  try {
+    const ably = new Ably.Rest({
+      key: process.env.ABLY_API_KEY || "j5t3sA.v_O0XA:TwoToQ-v5IqoqZYEHVGGiIxbU1O0WLztVSX7CFulXVU"
+    });
+
+    const notification = {
+      command: 'taskqueue',
+      payload: {
+        type: 'task-status-update',
+        taskId: task.taskId,
+        status: task.status,
+        timestamp: new Date().toISOString(),
+        data: {
+          email: task.email,
+          ip: task.ip,
+          objectData: task.objectData
+        }
+      }
+    };
+
+    // Strategy 1: Send to specific client if we can identify them
+    if (task.email || task.ip) {
+      try {
+        const presenceChannel = ably.channels.get('smartadmin-presence');
+        const members = await presenceChannel.presence.get();
+        const memberArray = Array.isArray(members) ? members : [];
+        const matchingClients = memberArray.filter((member: Record<string, unknown>) => {
+          const clientData = member.data as Record<string, unknown>;
+          return (task.email && clientData.email === task.email) || 
+                 (task.ip && clientData.clientIP === task.ip);
+        });
+
+        for (const client of matchingClients) {
+          const clientChannel = ably.channels.get(`smartadmin-control-${client.clientId}`);
+          await clientChannel.publish('command', {
+            ...notification,
+            targetClientId: client.clientId
+          });
+          console.log(`[Task Notification] ✓ Sent taskqueue command to specific client: ${client.clientId}`);
+        }
+      } catch (presenceError) {
+        console.warn('[Task Notification] Could not check presence:', presenceError);
+      }
+    }
+
+    // Strategy 2: Always broadcast to all clients (they can filter)
+    const broadcastChannel = ably.channels.get('smartadmin-control-broadcast');
+    await broadcastChannel.publish('command', notification);
+    console.log(`[Task Notification] ✓ Broadcast taskqueue command sent for task ${task.taskId}`);
+
+    // Strategy 3: Send to dedicated task notifications channel
+    const taskChannel = ably.channels.get('smartadmin-task-notifications');
+    await taskChannel.publish('status-update', notification);
+    console.log(`[Task Notification] ✓ Sent taskqueue command to task notifications channel`);
+
+  } catch (error) {
+    console.error('[Task Notification] Error sending taskqueue command:', error);
+    throw error;
   }
 }

@@ -13,7 +13,8 @@ import {
   X,
   Trash2,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Send
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -47,6 +48,11 @@ export default function TaskQueuePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [notificationModal, setNotificationModal] = useState<{
+    isOpen: boolean;
+    task: TaskQueueItem | null;
+  }>({ isOpen: false, task: null });
+  const [customMessage, setCustomMessage] = useState('');
 
   const loadTasks = useCallback(async () => {
     setIsLoading(true);
@@ -110,6 +116,33 @@ export default function TaskQueuePage() {
       alert('Failed to update task');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const sendCustomNotification = async (task: TaskQueueItem, message: string) => {
+    try {
+      const response = await fetch('/api/task-notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.taskId,
+          message,
+          notificationType: 'custom-message'
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log('[Task Queue] ✓ Custom notification sent');
+        alert('Notification sent successfully!');
+        setNotificationModal({ isOpen: false, task: null });
+        setCustomMessage('');
+      } else {
+        alert('Error: ' + data.error);
+      }
+    } catch (error) {
+      console.error('[Task Queue] Error sending notification:', error);
+      alert('Failed to send notification');
     }
   };
 
@@ -406,6 +439,17 @@ export default function TaskQueuePage() {
                           </Button>
                         </div>
                       )}
+                      
+                      {/* Custom notification button for all tasks */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setNotificationModal({ isOpen: true, task })}
+                        className="gap-1"
+                      >
+                        <Send className="h-4 w-4" />
+                        Notify
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -413,6 +457,44 @@ export default function TaskQueuePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Custom Notification Modal */}
+        {notificationModal.isOpen && notificationModal.task && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Send Custom Notification</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Task ID: {notificationModal.task.taskId}
+              </p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Custom Message
+                </label>
+                <textarea
+                  value={customMessage}
+                  onChange={(e) => setCustomMessage(e.target.value)}
+                  placeholder="Enter your message to the client..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  rows={4}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setNotificationModal({ isOpen: false, task: null })}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => sendCustomNotification(notificationModal.task!, customMessage)}
+                  disabled={!customMessage.trim()}
+                >
+                  Send Notification
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

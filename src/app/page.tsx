@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ChannelStatus } from "@/components/channel-status";
 import { LogoutButton } from "@/components/logout-button";
 import { Button } from "@/components/ui/button";
-import { Activity, Database, Shield, CheckCircle, ListTodo } from "lucide-react";
+import { Activity, Database, Shield, CheckCircle, ListTodo, Radio } from "lucide-react";
 import * as Ably from 'ably';
 
 export default function Home() {
@@ -274,6 +274,14 @@ export default function Home() {
               
               {/* Navigation Buttons */}
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/client-control')}
+                  className="gap-2"
+                >
+                  <Radio className="h-4 w-4" />
+                  Client Control
+                </Button>
                 <Button
                   variant="outline"
                   onClick={() => router.push('/logs')}
